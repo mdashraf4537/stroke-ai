@@ -7,7 +7,7 @@
 
     <form id="predict_form" action="{{ url_for('predict_image_mri') }}" method="POST" enctype="multipart/form-data" class="mt-5">
       <div id="drop_zone" class="relative rounded-2xl border-2 border-dashed border-slate-300 p-6 text-center hover:border-indigo-500 hover:bg-slate-50 transition cursor-pointer">
-        <input id="image_file" name="image_file" type="file" accept="image/png,image/jpeg,image/jpg,.dcm" required class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+        <input id="image_file" name="image_file" type="file" accept="image/png,image/jpeg,image/jpg,.dcm,.nii,.nii.gz" required class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
         
         <div id="drop_prompt" class="space-y-2">
           <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
@@ -18,7 +18,7 @@
           <div class="text-sm font-medium text-slate-700">
             <span class="text-indigo-600 font-semibold underline">Click to select MRI scan</span> or drag and drop file here
           </div>
-          <p class="text-xs text-slate-500">Supported formats: PNG, JPG, JPEG, DICOM (.dcm)</p>
+          <p class="text-xs text-slate-500">Supported formats: PNG, JPG, JPEG, DICOM (.dcm), NIfTI (.nii, .nii.gz)</p>
         </div>
 
         <div id="file_selected_view" class="hidden space-y-3">
@@ -29,7 +29,7 @@
           <div id="dicom_badge" class="hidden rounded-xl bg-blue-50 border border-blue-200 p-3 text-xs text-blue-800 text-left">
             <div class="font-semibold flex items-center gap-1.5">
               <svg class="h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-              DICOM Medical Scan Selected
+              3D NIfTI (.nii) / DICOM (.dcm) Medical Scan Selected
             </div>
           </div>
           <img id="image_preview" class="hidden mx-auto max-h-56 rounded-xl border object-contain" alt="Preview">
@@ -39,15 +39,29 @@
         </div>
       </div>
 
+      <div class="mt-4 rounded-2xl bg-slate-50 border border-slate-200 p-3.5">
+        <label for="sequence_mode" class="block text-xs font-semibold uppercase tracking-wider text-slate-600">
+          Stage-2 MRI Sequence Harmonization (Used if Ischemic is Predicted)
+        </label>
+        <select id="sequence_mode" name="sequence_mode" class="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none">
+          <option value="auto" selected>Auto-Detect Sequence (DWI / FLAIR / ADC)</option>
+          <option value="dwi">DWI / FLAIR / T2 (Bright Hyperintense Lesion → Harmonize to ADC)</option>
+          <option value="adc">ADC Map (Dark Hypointense Lesion — Native ISLES-2022 Profile)</option>
+        </select>
+        <p class="mt-1 text-[11px] text-slate-500">
+          If Stage-1 classifies the scan as <span class="font-semibold text-rose-600">Ischemic</span>, Stage-2 U-Net++ segmentation automatically activates.
+        </p>
+      </div>
+
       <button id="submit_btn" type="submit" class="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-white font-medium hover:bg-slate-800 flex items-center justify-center gap-2 transition">
         <svg id="submit_spinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
         </svg>
-        <span id="submit_btn_text">Predict + Generate Grad-CAM</span>
+        <span id="submit_btn_text">Predict + Generate Grad-CAM &amp; Lesion Map</span>
       </button>
       <div id="processing_notice" class="hidden mt-2 text-xs text-center text-slate-500 animate-pulse">
-        Running model prediction and generating Grad-CAM heatmap...
+        Running Stage-1 classification, Grad-CAM, and conditional Stage-2 Lesion Segmentation...
       </div>
     </form>
   </div>
@@ -69,15 +83,21 @@
           </span>
         </div>
 
-        <div class="mt-4 grid sm:grid-cols-2 gap-4">
+        <div class="mt-4 grid {% if img_result.lesion_result %}sm:grid-cols-3{% else %}sm:grid-cols-2{% endif %} gap-4">
           <div>
             <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Uploaded Scan</div>
             <img class="mt-2 w-full rounded-2xl border shadow-sm" src="{{ url_for('static', filename='uploads/' + img_result.upload_filename) }}" alt="Uploaded">
           </div>
           <div>
-            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Grad-CAM Activation Map</div>
+            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Grad-CAM Activation</div>
             <img class="mt-2 w-full rounded-2xl border shadow-sm" src="{{ url_for('static', filename='outputs/' + img_result.gradcam_filename) }}" alt="GradCAM">
           </div>
+          {% if img_result.lesion_result %}
+          <div>
+            <div class="text-xs font-semibold text-rose-600 uppercase tracking-wider">U-Net++ Lesion Contour</div>
+            <img class="mt-2 w-full rounded-2xl border-2 border-rose-300 shadow-sm" src="{{ url_for('static', filename='outputs/' + img_result.lesion_result.overlay_filename) }}" alt="Lesion Contour">
+          </div>
+          {% endif %}
         </div>
 
         <div class="mt-5">
@@ -122,4 +142,83 @@
     {% endif %}
   </div>
 </div>
+
+{% if img_result and img_result.lesion_result %}
+  {% set lr = img_result.lesion_result %}
+  {% set attr = lr.attributes %}
+  <div class="mt-6 rounded-3xl bg-white border border-rose-200 p-6 shadow-sm">
+    <!-- Header with Finding & Quick Definition -->
+    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+      <div class="max-w-2xl">
+        <div class="inline-flex items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-800">
+          <span class="h-2 w-2 rounded-full bg-rose-600 animate-ping"></span>
+          Stage-2 MRI Analysis: ISLES 2022 AI
+        </div>
+        <h2 class="mt-2 text-2xl font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+          <span>Predicted Finding:</span>
+          <span class="text-rose-700 font-extrabold">{{ attr.presence.title }}</span>
+          <span class="text-xs font-semibold rounded-full bg-indigo-50 text-indigo-700 px-2.5 py-0.5 border border-indigo-200">
+            Mode: {{ lr.sequence_mode_used }}
+          </span>
+        </h2>
+        <div class="mt-2 text-xs sm:text-sm text-slate-600 bg-rose-50/50 border-l-4 border-rose-500 rounded-r-lg p-2.5">
+          <span class="font-bold text-slate-800">Clinical Definition:</span>
+          Acute Ischemic Stroke occurs when an arterial cerebral vessel is blocked by a thrombus or embolus, cutting off oxygenated blood flow and causing focal cytotoxic edema (cellular swelling) and irreversible core infarction.
+        </div>
+      </div>
+      
+      <div class="rounded-2xl bg-slate-900 px-4 py-3 text-right text-white">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400">Validation Benchmark</div>
+        <div class="text-xl font-bold text-emerald-400">{{ "%.4f"|format(attr.accuracy.val_dice) }} Dice</div>
+        <div class="text-[10px] text-slate-400 mt-0.5">ISLES 2022 Benchmark</div>
+      </div>
+    </div>
+
+    <!-- 4-Panel U-Net++ Diagnostic Figure -->
+    <div class="mt-5">
+      <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+        Diagnostic Pipeline (Input Slice → Lesion Probability Heatmap → Binary Mask → Infarct Overlay)
+      </div>
+      <div class="overflow-hidden rounded-2xl border bg-slate-950 p-2 shadow-sm">
+        <img class="w-full rounded-xl object-contain max-h-[460px] mx-auto" src="{{ url_for('static', filename='outputs/' + lr.panel_filename) }}" alt="4-Panel Ischemic Lesion Segmentation">
+      </div>
+    </div>
+
+    <!-- 3 Essential Diagnostic Metrics Cards (Clean & Focused) -->
+    <div class="mt-5 grid gap-4 grid-cols-1 md:grid-cols-3">
+      <!-- 1. Lesion Size / Burden -->
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Infarct Burden / Area</div>
+        <div class="mt-1 text-xl font-extrabold text-rose-700">
+          {{ attr.size.area_cm2 }} cm² <span class="text-xs font-medium text-slate-500">({{ attr.size.brain_pct }}% of brain)</span>
+        </div>
+        <div class="text-xs text-slate-600 mt-1">
+          Peak Core Confidence: <span class="font-semibold text-slate-800">{{ attr.confidence.max_prob_pct }}%</span>
+        </div>
+      </div>
+
+      <!-- 2. Anatomical Location -->
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Anatomical Location</div>
+        <div class="mt-1 text-base font-bold text-slate-900">
+          {{ attr.location.hemisphere }}
+        </div>
+        <div class="text-xs text-indigo-700 font-semibold mt-1">
+          {{ attr.location.territory }}
+        </div>
+      </div>
+
+      <!-- 3. Accuracy Benchmark -->
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Segmentation Accuracy</div>
+        <div class="mt-1 text-xl font-extrabold text-emerald-600">
+          {{ "%.4f"|format(attr.accuracy.val_dice) }} <span class="text-xs font-medium text-slate-500">Val Dice</span>
+        </div>
+        <div class="text-xs text-slate-500 mt-1">
+          Trained on ISLES 2022 Expert Radiologist Ground-Truth
+        </div>
+      </div>
+    </div>
+  </div>
+{% endif %}
 {% endblock %}

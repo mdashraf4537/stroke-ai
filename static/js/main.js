@@ -35,8 +35,9 @@ document.addEventListener("DOMContentLoaded", () => {
     dropPrompt.classList.add("hidden");
     fileSelectedView.classList.remove("hidden");
 
-    const isDcm = file.name.toLowerCase().endsWith(".dcm");
-    if (isDcm) {
+    const lowerName = file.name.toLowerCase();
+    const isMedicalVol = lowerName.endsWith(".dcm") || lowerName.endsWith(".nii") || lowerName.endsWith(".nii.gz");
+    if (isMedicalVol) {
       dicomBadge.classList.remove("hidden");
       preview.classList.add("hidden");
       preview.src = "";

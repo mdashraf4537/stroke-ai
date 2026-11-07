@@ -14,10 +14,13 @@ class Config:
     MODEL_ML_PATH = os.path.join(BASE_DIR, "models", "stroke_ml_model.pkl")
     MODEL_CT_PATH = os.path.join(BASE_DIR, "models", "stroke_cnn_model_v2.keras")
     MODEL_MRI_PATH= os.path.join(BASE_DIR, "models", "stroke_cnn_model.h5")
+    MODEL_LESION_PATH = os.path.join(BASE_DIR, "models", "best_stroke_model.keras")
+    MODEL_CT_SUBTYPE_PATH = os.path.join(BASE_DIR, "models", "classifier_best.pth")
+    MODEL_CT_SEG_PATH = os.path.join(BASE_DIR, "models", "unet_resnet34_ctich_best.pth")
 
     UPLOAD_FOLDER = os.path.join(BASE_DIR, "static", "uploads")
     OUTPUT_FOLDER = os.path.join(BASE_DIR, "static", "outputs")
-    ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "dcm"}
+    ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "dcm", "nii", "gz"}
 
     RAG_API_URL = os.environ.get(
         "RAG_API_URL", "https://research-assistant-pa3v.onrender.com/api/v1"

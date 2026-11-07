@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Stroke AI — 4-Stage Neuroimaging Cascade Expo Presentation Suite</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --emerald: #10b981;
+      --blue: #3b82f6;
+      --indigo: #6366f1;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 28px;
+    }
+    .header {
+      text-align: center;
+      padding: 28px 20px;
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      margin-bottom: 28px;
+    }
+    .header h1 {
+      font-size: 2rem;
+      margin-bottom: 8px;
+      background: linear-gradient(90deg, #60a5fa, #34d399, #fbbf24);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header p { color: var(--muted); font-size: 1.05rem; }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .kpi {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 18px;
+      border-top: 4px solid var(--blue);
+    }
+    .kpi.emerald { border-top-color: var(--emerald); }
+    .kpi.amber { border-top-color: var(--amber); }
+    .kpi.rose { border-top-color: var(--rose); }
+    .kpi .stage-tag {
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .kpi .big-num {
+      font-size: 1.9rem;
+      font-weight: 800;
+      margin: 6px 0;
+    }
+    .kpi .desc { font-size: 0.88rem; color: #cbd5e1; }
+    .section {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 32px;
+    }
+    .section h2 {
+      font-size: 1.4rem;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      font-size: 0.8rem;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+    }
+    .badge.blue { background: rgba(59,130,246,0.2); color: #93c5fd; border: 1px solid #3b82f6; }
+    .badge.emerald { background: rgba(16,185,129,0.2); color: #6ee7b7; border: 1px solid #10b981; }
+    .badge.amber { background: rgba(245,158,11,0.2); color: #fcd34d; border: 1px solid #f59e0b; }
+    .badge.rose { background: rgba(244,63,94,0.2); color: #fda4af; border: 1px solid #f43f5e; }
+    .bridge-box {
+      background: rgba(245, 158, 11, 0.1);
+      border-left: 4px solid var(--amber);
+      padding: 14px 18px;
+      border-radius: 8px;
+      margin: 14px 0 20px 0;
+      font-size: 0.95rem;
+    }
+    .chart-img {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      margin-top: 12px;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>Dual-Modality Two-Stage Neuroimaging Stroke AI — Expo Benchmark Suite</h1>
+    <p>Stage-1 High-Precision Gatekeepers &rarr; Stage-2 Specialist Pixel Segmentation &amp; Subtype Quantification (MRI &amp; CT)</p>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi">
+      <div class="stage-tag">Stage 1 &bull; MRI Classification</div>
+      <div class="big-num" style="color:#60a5fa;">92.68% Peak Acc</div>
+      <div class="desc"><strong>100.0% Ischemic Precision</strong> (0 False Positives) on 615 MRI scans (MobileNetV2) &rarr; Triggers Stage-2 MRI when Ischemic.</div>
+    </div>
+    <div class="kpi emerald">
+      <div class="stage-tag">Stage 2 &bull; MRI Ischemic U-Net++</div>
+      <div class="big-num" style="color:#34d399;">93.05% Train Dice</div>
+      <div class="desc"><strong>81.12% Peak Val Dice</strong> (68.24% IoU, &gt;99.2% Specificity) on ISLES 2022 3D NIfTI ADC/DWI scans + Volume (mL) &amp; Penumbra.</div>
+    </div>
+    <div class="kpi amber">
+      <div class="stage-tag">Stage 1 &bull; CT Classification</div>
+      <div class="big-num" style="color:#fbbf24;">95.0% Bleed Recall</div>
+      <div class="desc"><strong>88.0% Precision &amp; 91.0% F1</strong> for Hemorrhage on External Hospital CT (77.46% Acc, 15,639 total slices) &rarr; Triggers Stage-2 CT.</div>
+    </div>
+    <div class="kpi rose">
+      <div class="stage-tag">Stage 2 &bull; CT NeuroFocus AI</div>
+      <div class="big-num" style="color:#fb7185;">96.8% Subtype Acc</div>
+      <div class="desc"><strong>74.03% Any-Bleed F1</strong> (ResNet-50, 101,986 slices) + <strong>72.26% Val Dice</strong> (ResNet-34 U-Net Bleed Mask &amp; Grad-CAM).</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>System Architecture Overview (Input &rarr; Processing &rarr; Output) <span class="badge blue">High-Level Architecture</span></h2>
+    <p style="color:var(--muted);">Clean 3-layer modular view of the system (Input Layer, Two-Stage Processing Engine, and Clinical Output Layer) without low-level model or metric clutter.</p>
+    <img class="chart-img" src="file:///C:/Users/ASUS/.gemini/antigravity/scratch/lesions/expo_presentation_suite/06_System_Architecture_Overview.png" onerror="this.src='06_System_Architecture_Overview.png'" alt="System Architecture Overview" />
+  </div>
+
+  <div class="section">
+    <h2>End-to-End System Workflow <span class="badge emerald">Operational Flow</span></h2>
+    <p style="color:var(--muted);">Step-by-step operational flow showing how a user logs in, selects Tabular / MRI / CT pathways, triggers Stage-2 analysis conditionally, and generates the final report.</p>
+    <img class="chart-img" src="file:///C:/Users/ASUS/.gemini/antigravity/scratch/lesions/expo_presentation_suite/07_System_Workflow_Diagram.png" onerror="this.src='07_System_Workflow_Diagram.png'" alt="End-to-End System Workflow" />
+  </div>
+
+  <div class="section">
+    <h2>Master Architecture &amp; Cascade Poster <span class="badge emerald">Overview</span></h2>
+    <p style="color:var(--muted);">End-to-end visual summary showing how every high metric in Stage 1 acts as a gatekeeper and every clinical/recall gap is resolved by Stage 2.</p>
+    <img class="chart-img" src="file:///C:/Users/ASUS/.gemini/antigravity/scratch/lesions/expo_presentation_suite/05_Master_Two_Stage_Cascade_Poster.png" onerror="this.src='05_Master_Two_Stage_Cascade_Poster.png'" alt="Master Two-Stage Cascade Poster" />
+  </div>
+
+  <div class="section">
+    <h2>1. Stage 1 (MRI): 3-Class Stroke Classification <span class="badge blue">stroke_cnn_model.h5</span></h2>
+    <div class="bridge-box">
+      <strong>Why We Cascade from Stage-1 MRI to Stage-2 MRI for Ischemic Stroke:</strong>
+      Stage-1 MobileNetV2 achieves <strong>100.0% Precision on Ischemic Stroke (FP = 0)</strong> with <strong>92.68% Peak Validation Accuracy</strong>, making it a zero-false-alarm gatekeeper. However, its 2D slice recall on subtle infarcts is <strong>67.0%</strong> and whole-image classification cannot measure <strong>infarct volume (mL), hemisphere/territory, or Core vs. Penumbra</strong>.
+    </div>
+    <img class="chart-img" src="file:///C:/Users/ASUS/.gemini/antigravity/scratch/lesions/expo_presentation_suite/01_MRI_Stage1_Classification_and_Trigger.png" onerror="this.src='01_MRI_Stage1_Classification_and_Trigger.png'" alt="Stage 1 MRI Classification and Trigger" />
+  </div>
+
+  <div class="section">
+    <h2>2. Stage 2 (MRI): Ischemic Lesion Segmentation &amp; Volumetry <span class="badge emerald">best_stroke_model.keras</span></h2>
+    <div class="bridge-box">
+      <strong>How Stage-2 MRI Resolves the Localization Gap:</strong>
+      Trained on <strong>ISLES 2022 3D NIfTI (ADC/DWI)</strong> with 2D U-Net++ Deep Supervision (9.04M params), achieving <strong>93.05% Peak Training Dice</strong>, <strong>81.12% Peak Validation Dice</strong>, and <strong>&gt;99.2% Voxel Specificity</strong> while extracting 5 clinical biomarkers (Axial Slice Depth, Vascular Territory, Area cm&sup2; &amp; 3D Volume mL, Core p&gt;0.80 vs Penumbra 0.30&ndash;0.60).
+    </div>
+    <img class="chart-img" src="file:///C:/Users/ASUS/.gemini/antigravity/scratch/lesions/expo_presentation_suite/02_MRI_Stage2_ISLES2022_UNetPlusPlus.png" onerror="this.src='02_MRI_Stage2_ISLES2022_UNetPlusPlus.png'" alt="Stage 2 MRI ISLES 2022 U-Net++" />
+  </div>
+
+  <div class="section">
+    <h2>3. Stage 1 (CT): 3-Class CT Classification <span class="badge amber">stroke_cnn_model_v2.keras</span></h2>
+    <div class="bridge-box">
+      <strong>Why We Cascade ONLY Hemorrhagic Stroke to CT Stage 2:</strong>
+      On External Hospital Validation (N=639, 77.46% Acc), <strong>Hemorrhage achieves 95.0% Recall (237/250), 88.0% Precision, and 91.0% F1</strong> (and 87.0% Precision on Internal Test N=3,000) because acute blood is hyperdense (60&ndash;80 HU) on CT, whereas early Ischemia has lower precision on CT (61&ndash;65%, handled by MRI). However, Stage-1 CT cannot identify <strong>which of the 5 anatomical hemorrhage compartments</strong> is bleeding or quantify bleed area %.
+    </div>
+    <img class="chart-img" src="file:///C:/Users/ASUS/.gemini/antigravity/scratch/lesions/expo_presentation_suite/03_CT_Stage1_Classification_and_Hemorrhage_Trigger.png" onerror="this.src='03_CT_Stage1_Classification_and_Hemorrhage_Trigger.png'" alt="Stage 1 CT Classification and Hemorrhage Trigger" />
+  </div>
+
+  <div class="section">
+    <h2>4. Stage 2 (CT): NeuroFocus AI — 5-Subtype Classifier &amp; U-Net Segmenter <span class="badge rose">classifier_best.pth + unet_resnet34_ctich_best.pth</span></h2>
+    <div class="bridge-box">
+      <strong>How Stage-2A (ResNet-50) &amp; Stage-2B (ResNet-34 U-Net) Work Together:</strong>
+      Stage-2A classifies 5 anatomical bleed subtypes across <strong>101,986 slices</strong> with <strong>96.8% Mean Binary Accuracy</strong> and <strong>74.03% Any-Hemorrhage F1</strong> (led by IVH 80.3% Precision / 75.1% F1 and IPH 74.2% Precision / 70.0% F1). For rare Epidural bleeds (EDH, N=89, 33.7% recall), <strong>Stage-2B ResNet-34 U-Net (72.26% Peak Validation Dice @ 0.55 threshold) + Decoder Grad-CAM</strong> segments the exact hyperdense bleed pixels in parallel so no hemorrhage is missed.
+    </div>
+    <img class="chart-img" src="file:///C:/Users/ASUS/.gemini/antigravity/scratch/lesions/expo_presentation_suite/04_CT_Stage2_NeuroFocus_Subtype_and_UNet.png" onerror="this.src='04_CT_Stage2_NeuroFocus_Subtype_and_UNet.png'" alt="Stage 2 CT NeuroFocus Subtype and U-Net" />
+  </div>
+
+</body>
+</html>

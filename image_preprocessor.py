@@ -9,23 +9,89 @@ try:
 except ImportError:
     pydicom = None
 
+try:
+    import nibabel as nib
+except ImportError:
+    nib = None
+
+
+def _is_nifti_file(file_path: str) -> bool:
+    """Check if the file is a NIfTI (.nii or .nii.gz) neuroimaging volume."""
+    lower = file_path.lower()
+    return lower.endswith(".nii") or lower.endswith(".nii.gz")
+
+
+def load_nifti_slice_rgb(file_path: str, slice_index: int = None) -> np.ndarray:
+    """
+    Loads a 3D/4D NIfTI (.nii / .nii.gz) volume and extracts a 2D axial slice
+    formatted as an 8-bit 3-channel RGB image for Stage-1 2D CNN classification
+    and browser display.
+
+    Handles:
+      - 4D -> 3D volume squeezing
+      - Automatic mid-ventricular axial slice selection (around 58% depth, e.g. z=42/72)
+      - 90-degree RAS-to-radiological upright rotation (`np.rot90`)
+      - Floating-point physical unit (e.g. 0.0004..0.0035 mm²/s ADC) percentile
+        rescaling to [0..255] uint8
+    """
+    if nib is None:
+        raise ImportError(
+            "nibabel is required to read .nii / .nii.gz files. Install with 'pip install nibabel'."
+        )
+    vol = nib.load(file_path).get_fdata()
+    if vol.ndim == 4:
+        vol = vol[:, :, :, 0]
+    if vol.ndim == 2:
+        slice_2d = vol
+    else:
+        depth = vol.shape[2]
+        if slice_index is not None and 0 <= slice_index < depth:
+            z = slice_index
+        else:
+            # Select the mid-axial slice (50% depth, e.g. z=36/72) where
+            # Stage-1 2D MRI CNN has the best anatomical alignment
+            target_z = int(depth * 0.50)
+            if 0 <= target_z < depth and np.count_nonzero(vol[:, :, target_z] > 0) > 200:
+                z = target_z
+            else:
+                z = max(range(depth), key=lambda i: int(np.count_nonzero(vol[:, :, i] > 0)))
+        slice_2d = vol[:, :, z]
+
+    slice_2d = np.nan_to_num(slice_2d, nan=0.0, posinf=0.0, neginf=0.0).astype(np.float32)
+    # Rotate 90 degrees counter-clockwise from NIfTI (X, Y) to upright display orientation
+    slice_upright = np.rot90(slice_2d)
+
+    non_zero = slice_upright[slice_upright > 0]
+    if non_zero.size > 0:
+        p99 = float(np.percentile(non_zero, 99.0))
+        scaled = (np.clip(slice_upright, 0.0, p99) / (p99 + 1e-8)) * 255.0
+        gray_u8 = scaled.astype(np.uint8)
+    else:
+        gray_u8 = np.zeros_like(slice_upright, dtype=np.uint8)
+
+    return cv2.cvtColor(gray_u8, cv2.COLOR_GRAY2RGB)
+
 
 def load_raw_image(file_path: str) -> np.ndarray:
     """
-    Loads an image from disk. Supports standard image formats (PNG, JPG, JPEG)
-    and medical DICOM (.dcm) files with automatic Hounsfield Unit (HU) windowing.
+    Loads an image from disk. Supports standard image formats (PNG, JPG, JPEG),
+    medical DICOM (.dcm) files, and 3D NIfTI (.nii / .nii.gz) volumes.
     Returns:
         RGB numpy array of shape (H, W, 3) with dtype uint8 (0..255).
     """
     ext = os.path.splitext(file_path)[1].lower()
-    
-    # 1. Handle DICOM format if file has .dcm extension or DICOM header
+
+    # 1. Handle NIfTI (.nii / .nii.gz) 3D MRI volume
+    if _is_nifti_file(file_path):
+        return load_nifti_slice_rgb(file_path)
+
+    # 2. Handle DICOM format if file has .dcm extension or DICOM header
     if ext == ".dcm" or _is_dicom_file(file_path):
         if pydicom is None:
             raise ImportError("pydicom is required to read .dcm medical files. Install with 'pip install pydicom'.")
         return load_dicom_with_brain_window(file_path)
 
-    # 2. Handle standard image formats (PNG, JPG, JPEG, etc.)
+    # 3. Handle standard image formats (PNG, JPG, JPEG, etc.)
     with Image.open(file_path) as pil_img:
         # Correct orientation based on EXIF tags (e.g. smartphone photos)
         pil_img = ImageOps.exif_transpose(pil_img)
@@ -158,6 +224,11 @@ def preprocess_real_world_scan(file_path: str, target_size=(224, 224), apply_con
         raw_rgb: original uint8 array for display
     """
     raw_rgb = load_raw_image(file_path)
+    if _is_nifti_file(file_path):
+        # Preserve native NIfTI field-of-view margin for 2D CNN compatibility
+        final_rgb = cv2.resize(raw_rgb, target_size)
+        return final_rgb, raw_rgb
+
     cropped = clean_and_crop_head(raw_rgb)
     
     if apply_contrast_enhancement:
@@ -207,6 +278,23 @@ def validate_brain_scan(
     modality_label = "CT" if expected_modality.lower() == "ct" else "MRI"
     other_label = "MRI" if modality_label == "CT" else "CT"
     fname_lower = (original_filename or os.path.basename(file_path)).lower()
+
+    # 0. Explicit NIfTI (.nii / .nii.gz) neuroimaging check
+    if _is_nifti_file(file_path):
+        if expected_modality.lower() == "ct" and any(
+            tok in fname_lower for tok in ("mri", "adc", "dwi", "flair", "t1", "t2", "strokeperf")
+        ):
+            return {
+                "is_valid": False,
+                "error": "Modality mismatch: Uploaded NIfTI volume is a Brain MRI scan. Please upload a Brain CT scan.",
+            }
+        gray_nii = cv2.cvtColor(raw_rgb, cv2.COLOR_RGB2GRAY)
+        if float(np.std(gray_nii)) < 8.0 or int(np.count_nonzero(gray_nii > 10)) < 100:
+            return {
+                "is_valid": False,
+                "error": "Invalid NIfTI volume: Volume appears empty or lacks brain tissue signal.",
+            }
+        return {"is_valid": True, "error": None}
 
     # 1. Explicit DICOM header modality check (.dcm)
     ext = os.path.splitext(file_path)[1].lower()

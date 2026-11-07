@@ -39,6 +39,13 @@
         </div>
       </div>
 
+      <div class="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+        <label class="block text-xs font-semibold text-slate-700">
+          Optional: Upload Ground-Truth Mask (<code class="text-indigo-700">*_HGE_Seg.jpg</code>) for Live Dice Accuracy Verification
+        </label>
+        <input name="gt_mask_file" type="file" accept="image/png,image/jpeg,image/jpg" class="mt-1.5 block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-100 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-indigo-700 hover:file:bg-indigo-200">
+      </div>
+
       <button id="submit_btn" type="submit" class="mt-4 w-full rounded-xl bg-slate-900 px-4 py-3 text-white font-medium hover:bg-slate-800 flex items-center justify-center gap-2 transition">
         <svg id="submit_spinner" class="hidden animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -69,15 +76,21 @@
           </span>
         </div>
 
-        <div class="mt-4 grid sm:grid-cols-2 gap-4">
+        <div class="mt-4 grid {% if img_result.ct_hemorrhage_result %}sm:grid-cols-3{% else %}sm:grid-cols-2{% endif %} gap-4">
           <div>
             <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Uploaded Scan</div>
             <img class="mt-2 w-full rounded-2xl border shadow-sm" src="{{ url_for('static', filename='uploads/' + img_result.upload_filename) }}" alt="Uploaded">
           </div>
           <div>
-            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Grad-CAM Activation Map</div>
+            <div class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Grad-CAM Activation</div>
             <img class="mt-2 w-full rounded-2xl border shadow-sm" src="{{ url_for('static', filename='outputs/' + img_result.gradcam_filename) }}" alt="GradCAM">
           </div>
+          {% if img_result.ct_hemorrhage_result %}
+          <div>
+            <div class="text-xs font-semibold text-rose-600 uppercase tracking-wider">U-Net Bleed Contour</div>
+            <img class="mt-2 w-full rounded-2xl border-2 border-rose-300 shadow-sm" src="{{ url_for('static', filename='outputs/' + img_result.ct_hemorrhage_result.overlay_filename) }}" alt="Hemorrhage Contour">
+          </div>
+          {% endif %}
         </div>
 
         <div class="mt-5">
@@ -122,4 +135,101 @@
     {% endif %}
   </div>
 </div>
+
+{% if img_result and img_result.ct_hemorrhage_result %}
+  {% set hr = img_result.ct_hemorrhage_result %}
+  {% set bm = hr.bleed_metrics %}
+  {% set reg = hr.region %}
+  {% set st_defs = {
+    'Subdural': 'Subdural Hemorrhage (SDH) is bleeding between the dura mater and the arachnoid membrane, typically caused by torn bridging veins from head trauma.',
+    'Epidural': 'Epidural Hemorrhage (EDH) is bleeding between the inner skull table and the dura mater, usually caused by arterial damage following head injury.',
+    'Subarachnoid': 'Subarachnoid Hemorrhage (SAH) is bleeding into the subarachnoid space surrounding the brain, commonly triggered by a ruptured cerebral aneurysm.',
+    'Intraparenchymal': 'Intraparenchymal Hemorrhage (IPH) is bleeding directly within the brain tissue itself (focal hematoma), often linked to chronic high blood pressure.',
+    'Intraventricular': 'Intraventricular Hemorrhage (IVH) occurs when blood enters the fluid-filled ventricular cavities of the brain, often extending from adjacent parenchyma.'
+  } %}
+  
+  <div class="mt-6 rounded-3xl bg-white border border-rose-200 p-6 shadow-sm">
+    <!-- Header with Type & Quick Definition -->
+    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
+      <div class="max-w-2xl">
+        <div class="inline-flex items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-800">
+          <span class="h-2 w-2 rounded-full bg-rose-600 animate-ping"></span>
+          Stage-2 CT Analysis: NeuroFocus AI
+        </div>
+        <h2 class="mt-2 text-2xl font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+          <span>Predicted Finding:</span>
+          <span class="text-rose-700 font-extrabold">{{ hr.top_subtype.name }} Hemorrhage</span>
+          <span class="text-sm font-semibold rounded-full bg-rose-50 text-rose-700 px-2.5 py-0.5 border border-rose-200">
+            {{ hr.top_subtype.prob_pct }}% Confidence
+          </span>
+        </h2>
+        <div class="mt-2 text-xs sm:text-sm text-slate-600 bg-rose-50/50 border-l-4 border-rose-500 rounded-r-lg p-2.5">
+          <span class="font-bold text-slate-800">Clinical Definition:</span>
+          {{ st_defs[hr.top_subtype.name] | default(hr.top_subtype.description) }}
+        </div>
+      </div>
+      
+      <div class="rounded-2xl bg-slate-900 px-4 py-3 text-right text-white">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400">Validation Benchmark</div>
+        <div class="text-xl font-bold text-emerald-400">{{ "%.4f"|format(bm.val_dice_benchmark) }} Dice</div>
+        <div class="text-[10px] text-slate-400 mt-0.5">RSNA &amp; CT-ICH Validated</div>
+      </div>
+    </div>
+
+    <!-- 4-Panel NeuroFocus AI Diagnostic Figure -->
+    <div class="mt-5">
+      <div class="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+        Diagnostic Pipeline (Input CT → U-Net Probability Map → Decoder Grad-CAM → Segmented Bleed Mask)
+      </div>
+      <div class="overflow-hidden rounded-2xl border bg-slate-950 p-2 shadow-sm">
+        <img class="w-full rounded-xl object-contain max-h-[460px] mx-auto" src="{{ url_for('static', filename='outputs/' + hr.panel_filename) }}" alt="4-Panel CT Hemorrhage Analysis">
+      </div>
+    </div>
+
+    <!-- 3 Essential Diagnostic Metrics Cards (Clean & Focused) -->
+    <div class="mt-5 grid gap-4 grid-cols-1 md:grid-cols-3">
+      <!-- 1. Bleed Quantification -->
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Bleed Burden / Area</div>
+        <div class="mt-1 text-xl font-extrabold text-rose-700">
+          {{ bm.bleed_pct_brain }}% <span class="text-xs font-medium text-slate-500">of brain area</span>
+        </div>
+        <div class="text-xs text-slate-600 mt-1">
+          Estimated Area: <span class="font-semibold text-slate-800">{{ bm.bleed_area_cm2 }} cm²</span> ({{ bm.bleed_pixels }} pixels)
+        </div>
+      </div>
+
+      <!-- 2. Anatomical Location -->
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Anatomical Location</div>
+        <div class="mt-1 text-base font-bold text-slate-900">
+          {{ reg.hemisphere }}
+        </div>
+        <div class="text-xs text-indigo-700 font-semibold mt-1">
+          {{ reg.lobe_region }}
+        </div>
+      </div>
+
+      <!-- 3. Model Accuracy / Dice Score -->
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Segmentation Accuracy</div>
+        {% if bm.live_gt_dice is not none %}
+          <div class="mt-1 text-xl font-extrabold text-emerald-600">
+            {{ "%.4f"|format(bm.live_gt_dice) }} <span class="text-xs font-medium text-emerald-700">Live Dice</span>
+          </div>
+          <div class="text-xs text-emerald-700 font-medium mt-1">
+            Verified against Doctor Ground-Truth Mask
+          </div>
+        {% else %}
+          <div class="mt-1 text-xl font-extrabold text-emerald-600">
+            {{ "%.4f"|format(bm.val_dice_benchmark) }} <span class="text-xs font-medium text-slate-500">Val Dice</span>
+          </div>
+          <div class="text-xs text-slate-500 mt-1">
+            Overlap with Neuroradiologist Benchmark
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endif %}
 {% endblock %}

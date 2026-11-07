@@ -119,6 +119,9 @@ def allowed_file(filename: str) -> bool:
 _ml_model_cache = None
 _mri_model_cache = None
 _ct_model_cache = None
+_lesion_model_cache = None
+_ct_subtype_model_cache = None
+_ct_seg_model_cache = None
 
 
 def load_ml_model():
@@ -147,6 +150,36 @@ def load_ct_model():
     if not os.path.exists(path): return None
     _ct_model_cache = tf.keras.models.load_model(path, compile=False)
     return _ct_model_cache
+
+
+def load_lesion_model():
+    """Load Stage-2 Ischemic Lesion Segmentation U-Net++ model (best_stroke_model.keras)."""
+    global _lesion_model_cache
+    if _lesion_model_cache is not None:
+        return _lesion_model_cache
+    path = app.config.get("MODEL_LESION_PATH")
+    if not path or not os.path.exists(path):
+        return None
+    _lesion_model_cache = tf.keras.models.load_model(path, compile=False)
+    return _lesion_model_cache
+
+
+def load_ct_neurofocus_models():
+    """Load NeuroFocus AI Stage-2 CT Hemorrhage Subtype Classifier & ResNet-34 U-Net Segmenter."""
+    global _ct_subtype_model_cache, _ct_seg_model_cache
+    if _ct_subtype_model_cache is not None and _ct_seg_model_cache is not None:
+        return _ct_subtype_model_cache, _ct_seg_model_cache
+    from ct_hemorrhage_analyzer import (
+        load_neurofocus_classifier,
+        load_neurofocus_segmenter,
+    )
+    cls_path = app.config.get("MODEL_CT_SUBTYPE_PATH")
+    seg_path = app.config.get("MODEL_CT_SEG_PATH")
+    if _ct_subtype_model_cache is None:
+        _ct_subtype_model_cache = load_neurofocus_classifier(cls_path)
+    if _ct_seg_model_cache is None:
+        _ct_seg_model_cache = load_neurofocus_segmenter(seg_path)
+    return _ct_subtype_model_cache, _ct_seg_model_cache
 
 
 # ----------------------------
@@ -188,63 +221,99 @@ def _iter_layers_reverse(m):
         yield layer
 
 
-def find_last_conv_layer_obj(model):
-    """Return the last Conv2D layer object (works for nested transfer learning models)."""
-    for layer in _iter_layers_reverse(model):
-        if isinstance(layer, tf.keras.layers.Conv2D):
-            return layer
-    return None
-
-
-def _unwrap_output(x):
-    """If keras returns list/tuple outputs, unwrap the first tensor."""
-    return x[0] if isinstance(x, (list, tuple)) else x
-
-
-def make_gradcam_overlay(img_rgb, model, img_size,pred_index=None):
+def _find_multiscale_conv_layers(model):
     """
-    img_rgb: numpy uint8 (H,W,3)
-    returns: overlay_rgb (224,224,3), pred_index
+    Returns up to two Conv2D layers: the final Conv2D layer (7x7) and a higher-resolution
+    intermediate Conv2D layer (14x14 or 28x28) so Grad-CAM does not collapse into a
+    single coarse 7x7 center bullseye dot.
     """
-    last_conv_layer = find_last_conv_layer_obj(model)
-    if last_conv_layer is None:
+    conv_layers = [
+        layer for layer in _iter_layers_reverse(model)
+        if isinstance(layer, tf.keras.layers.Conv2D)
+    ]
+    if not conv_layers:
+        return []
+    selected = [conv_layers[0]]
+    for layer in conv_layers[1:]:
+        try:
+            shape = layer.output.shape
+            if len(shape) == 4 and shape[1] is not None and int(shape[1]) in (14, 28):
+                selected.append(layer)
+                break
+        except Exception:
+            continue
+    return selected
+
+
+def make_gradcam_overlay(img_rgb, model, img_size, pred_index=None):
+    """
+    Multi-Scale Intracranial-Masked Grad-CAM:
+      - Fuses 7x7 semantic activation with 14x14 / 28x28 spatial detail
+      - Masks out external black background & outer calcified skull ring so
+        activations highlight actual parenchymal lesions instead of a center dot.
+    """
+    target_layers = _find_multiscale_conv_layers(model)
+    if not target_layers:
         raise ValueError("No Conv2D layer found for Grad-CAM (model must contain Conv2D layers).")
 
-    # Use correct input structure
     model_inputs = model.inputs
     model_outputs = model.outputs
     pred_tensor = model_outputs[0] if isinstance(model_outputs, (list, tuple)) else model_outputs
 
-    grad_model = tf.keras.models.Model(
-        inputs=model_inputs,
-        outputs=[last_conv_layer.output, pred_tensor]
-    )
-
-    # Prepare input exactly as prediction
-    inp = prepare_image_input(model, img_rgb,img_size)
+    inp = prepare_image_input(model, img_rgb, img_size)
     inp_for_model = [inp] if isinstance(model_inputs, (list, tuple)) else inp
 
-    with tf.GradientTape() as tape:
-        conv_out, preds = grad_model(inp_for_model)
-        preds = _unwrap_output(preds)
-
-        if pred_index is None:
-            pred_index = int(tf.argmax(preds[0]))
-        loss = preds[:, pred_index]
-
-    grads = tape.gradient(loss, conv_out)
-    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
-
-    conv_out = conv_out[0]
-    heatmap = conv_out @ pooled_grads[..., tf.newaxis]
-    heatmap = tf.squeeze(heatmap)
-    heatmap = tf.maximum(heatmap, 0) / (tf.reduce_max(heatmap) + 1e-8)
-    heatmap = heatmap.numpy()
-
-    # Create overlay on resized base image
     base = cv2.resize(img_rgb, img_size)
-    heatmap = cv2.resize(heatmap, img_size)
-    heatmap_uint8 = np.uint8(255 * heatmap)
+    gray_base = cv2.cvtColor(base, cv2.COLOR_RGB2GRAY)
+
+    # Extract intracranial brain cavity mask to prevent corner/background artifacts
+    _, head_thr = cv2.threshold(gray_base, 20, 255, cv2.THRESH_BINARY)
+    cnts, _ = cv2.findContours(head_thr, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    brain_mask = np.zeros_like(gray_base, dtype=np.float32)
+    if cnts:
+        largest = max(cnts, key=cv2.contourArea)
+        cv2.drawContours(brain_mask, [largest], -1, 1.0, thickness=-1)
+        k_erode = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        brain_mask = cv2.erode(brain_mask, k_erode, iterations=1)
+        brain_mask[gray_base >= 238] = 0.0
+    else:
+        brain_mask[:] = 1.0
+
+    fused_heatmap = np.zeros((img_size[1], img_size[0]), dtype=np.float32)
+
+    for w_scale, conv_layer in zip([0.55, 0.45], target_layers):
+        try:
+            grad_model = tf.keras.models.Model(
+                inputs=model_inputs,
+                outputs=[conv_layer.output, pred_tensor]
+            )
+            with tf.GradientTape() as tape:
+                conv_out, preds = grad_model(inp_for_model)
+                preds = _unwrap_output(preds)
+                if pred_index is None:
+                    pred_index = int(tf.argmax(preds[0]))
+                loss = preds[:, pred_index]
+
+            grads = tape.gradient(loss, conv_out)
+            if grads is None:
+                continue
+            pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+            c_out = conv_out[0]
+            hm = c_out @ pooled_grads[..., tf.newaxis]
+            hm = tf.squeeze(hm)
+            hm = tf.maximum(hm, 0).numpy()
+            hm_resized = cv2.resize(hm, img_size, interpolation=cv2.INTER_CUBIC)
+            hm_resized = hm_resized * brain_mask
+            if float(np.max(hm_resized)) > 1e-8:
+                hm_resized = hm_resized / float(np.max(hm_resized))
+            fused_heatmap += w_scale * hm_resized
+        except Exception:
+            continue
+
+    if float(np.max(fused_heatmap)) > 1e-8:
+        fused_heatmap = fused_heatmap / float(np.max(fused_heatmap))
+
+    heatmap_uint8 = np.uint8(255 * fused_heatmap)
     heatmap_color = cv2.applyColorMap(heatmap_uint8, cv2.COLORMAP_JET)
 
     overlay = cv2.addWeighted(
@@ -420,7 +489,7 @@ def _run_image_prediction(modality):
             flash("No file selected.", "error")
             return redirect(url_for(f"predict_image_{modality}"))
         if not allowed_file(f.filename):
-            flash("Only PNG/JPG/JPEG/DCM allowed.", "error")
+            flash("Only PNG/JPG/JPEG/DCM/NII/NII.GZ allowed.", "error")
             return redirect(url_for(f"predict_image_{modality}"))
         filename = secure_filename(f.filename)
         if not filename or "." not in filename:
@@ -431,15 +500,25 @@ def _run_image_prediction(modality):
         f.save(upload_path)
         try:
             from image_preprocessor import (
+                load_raw_image,
                 preprocess_real_world_scan,
                 prepare_model_tensor,
                 check_scan_quality,
                 validate_brain_scan,
+                _is_nifti_file,
             )
-            # For CT scans apply CLAHE; for MRI keep native contrast as in training
-            preprocessed_rgb, raw_rgb = preprocess_real_world_scan(
-                upload_path, target_size=img_size, apply_contrast_enhancement=(not is_mri)
-            )
+            is_nifti = _is_nifti_file(upload_path)
+            if is_mri:
+                # For MRI keep native contrast as in training
+                preprocessed_rgb, raw_rgb = preprocess_real_world_scan(
+                    upload_path, target_size=img_size, apply_contrast_enhancement=False
+                )
+            else:
+                # For CT scans: use raw image resized directly to target_size (224x224)
+                # without real-world head cropping, CLAHE, or letterboxing, matching
+                # the exact native training pipeline of stroke_cnn_model_v2.keras
+                raw_rgb = load_raw_image(upload_path)
+                preprocessed_rgb = cv2.resize(raw_rgb, img_size)
 
             # Strict Brain CT / MRI Scan Validation
             validation = validate_brain_scan(
@@ -461,7 +540,7 @@ def _run_image_prediction(modality):
                 flash(f"Quality Warning: {warning_msg}", "warning")
 
             display_filename = unique
-            if unique.lower().endswith(".dcm"):
+            if unique.lower().endswith((".dcm", ".nii", ".nii.gz")):
                 display_filename = f"{unique}.png"
                 display_path = os.path.join(app.config["UPLOAD_FOLDER"], display_filename)
                 Image.fromarray(preprocessed_rgb).save(display_path)
@@ -476,6 +555,77 @@ def _run_image_prediction(modality):
             gradcam_name = f"gradcam_{modality}_{uuid.uuid4().hex}.png"
             gradcam_path = os.path.join(app.config["OUTPUT_FOLDER"], gradcam_name)
             Image.fromarray(overlay).save(gradcam_path)
+
+            # ------------------------------------------------------------------
+            # STEP 4: Conditional Trigger — If MRI prediction is Ischemic,
+            # activate Stage-2 U-Net++ Lesion Segmentation (best_stroke_model.keras)
+            # ------------------------------------------------------------------
+            lesion_result = None
+            if is_mri and pred_label.strip().lower() == "ischemic":
+                lesion_model = load_lesion_model()
+                if lesion_model is not None:
+                    lesion_uid = uuid.uuid4().hex[:10]
+                    if is_nifti:
+                        from lesion_segmenter import run_nifti_lesion_segmentation
+                        lesion_result = run_nifti_lesion_segmentation(
+                            nifti_path=upload_path,
+                            lesion_model=lesion_model,
+                            output_folder=app.config["OUTPUT_FOLDER"],
+                            unique_id=lesion_uid,
+                            prob_thresh=0.5,
+                            target_size=img_size,
+                        )
+                    else:
+                        from lesion_segmenter import run_ischemic_lesion_segmentation
+                        seq_mode = request.form.get("sequence_mode", "auto")
+                        lesion_result = run_ischemic_lesion_segmentation(
+                            img_rgb=preprocessed_rgb,
+                            lesion_model=lesion_model,
+                            output_folder=app.config["OUTPUT_FOLDER"],
+                            unique_id=lesion_uid,
+                            sequence_mode=seq_mode,
+                            prob_thresh=0.5,
+                        )
+                else:
+                    flash(
+                        "Stage-2 Lesion Segmentation model (best_stroke_model.keras) not found in models/.",
+                        "warning",
+                    )
+
+            # ------------------------------------------------------------------
+            # Conditional Trigger — If CT prediction is Hemorrhage, activate
+            # NeuroFocus AI Stage-2 (5-Subtype ResNet-50 + U-Net ResNet-34 Segmenter)
+            # ------------------------------------------------------------------
+            ct_hemorrhage_result = None
+            if (not is_mri) and pred_label.strip().lower() == "hemorrhage":
+                ct_cls_model, ct_seg_model = load_ct_neurofocus_models()
+                if ct_cls_model is not None and ct_seg_model is not None:
+                    from ct_hemorrhage_analyzer import run_ct_hemorrhage_analysis
+                    hem_uid = uuid.uuid4().hex[:10]
+                    gt_mask_upload_path = None
+                    if "gt_mask_file" in request.files:
+                        mf = request.files["gt_mask_file"]
+                        if mf and mf.filename:
+                            m_unique = f"gt_{hem_uid}_{secure_filename(mf.filename)}"
+                            gt_mask_upload_path = os.path.join(app.config["UPLOAD_FOLDER"], m_unique)
+                            mf.save(gt_mask_upload_path)
+
+                    ct_hemorrhage_result = run_ct_hemorrhage_analysis(
+                        image_path_or_rgb=raw_rgb,
+                        classifier=ct_cls_model,
+                        segmenter=ct_seg_model,
+                        output_folder=app.config["OUTPUT_FOLDER"],
+                        unique_id=hem_uid,
+                        cls_threshold=0.50,
+                        seg_threshold=0.55,
+                        gt_mask_path=gt_mask_upload_path,
+                    )
+                else:
+                    flash(
+                        "Stage-2 NeuroFocus AI CT models (classifier_best.pth / unet_resnet34_ctich_best.pth) not found in models/.",
+                        "warning",
+                    )
+
             rec = PredictionHistory(
                 user_id=current_user.id,
                 pred_type=f"image_{modality}",
@@ -493,6 +643,8 @@ def _run_image_prediction(modality):
                 "upload_filename": display_filename,
                 "gradcam_filename": gradcam_name,
                 "probas": probas,
+                "lesion_result": lesion_result,
+                "ct_hemorrhage_result": ct_hemorrhage_result,
             }
             flash(f"{label} prediction saved in History.", "success")
         except Exception as e:
